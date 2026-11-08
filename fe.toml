@@ -1,3 +1,4 @@
+# Build and tested with Fe 26.5.0. The CI workflow pins FE_VERSION to v26.5.0.
 [ingot]
-name = "starter"
+name = "last_wei"
 version = "0.1.0"

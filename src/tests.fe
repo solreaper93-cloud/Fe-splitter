@@ -1,85 +1,125 @@
-// Run the tests with `fe test`.
+// Pure arithmetic and EVM interface tests for Last Wei's four-recipient quote.
 
-use ingot::{Vault, VaultMsg}
-use std::evm::{days, ether}
+use ingot::{allocate, LastWeiSplitter, SplitterMsg}
+use std::evm::{ether, wei}
 
-#[test(balance = 10_000_000_000_000_000_000)]
-fn deposit_is_locked() uses (evm: mut Evm) {
-    let vault = evm.create2<Vault>(value: Wei::zero(), args: (days(7),), salt: 0)
-
-    let unlock: Timestamp = evm
-        .call(
-            addr: vault,
-            gas: 200000,
-            value: ether(1),
-            message: VaultMsg::Deposit {},
-        )
-    let balance: Wei = evm
-        .call(
-            addr: vault,
-            gas: 100000,
-            value: Wei::zero(),
-            message: VaultMsg::BalanceOf { owner: evm.address() },
-        )
-    assert!(balance == ether(1))
-
-    let stored: Timestamp = evm
-        .call(
-            addr: vault,
-            gas: 100000,
-            value: Wei::zero(),
-            message: VaultMsg::UnlockTime { owner: evm.address() },
-        )
-    assert!(stored == unlock)
+#[test]
+fn exact_proportions_conserve_amount() {
+    let shares = allocate(amount: wei(100), weights: [1, 2, 1, 0])
+    assert!(shares == [25, 50, 25, 0])
+    assert!(shares[0] + shares[1] + shares[2] + shares[3] == 100)
 }
 
-#[test(should_revert, balance = 10_000_000_000_000_000_000)]
-fn withdraw_before_unlock_reverts() uses (evm: mut Evm) {
-    let vault = evm.create2<Vault>(value: Wei::zero(), args: (days(7),), salt: 0)
-    let _: Timestamp = evm
-        .call(
-            addr: vault,
-            gas: 200000,
-            value: ether(1),
-            message: VaultMsg::Deposit {},
-        )
-    let _: Wei = evm
-        .call(
-            addr: vault,
-            gas: 200000,
-            value: Wei::zero(),
-            message: VaultMsg::Withdraw { to: evm.address() },
-        )
+#[test]
+fn largest_remainder_tie_uses_input_order() {
+    // Each exact share is 1/3 wei. One wei remains after flooring;
+    // recipient 0 wins the equal-remainder tie.
+    let shares = allocate(amount: wei(1), weights: [1, 1, 1, 0])
+    assert!(shares == [1, 0, 0, 0])
+    assert!(shares[0] + shares[1] + shares[2] + shares[3] == 1)
 }
 
-#[test(balance = 10_000_000_000_000_000_000)]
-fn withdraw_after_unlock() uses (evm: mut Evm) {
-    // Without a lock period, a deposit can be withdrawn right away.
-    let vault = evm.create2<Vault>(value: Wei::zero(), args: (Duration::zero(),), salt: 0)
-    let _: Timestamp = evm
-        .call(
-            addr: vault,
-            gas: 200000,
-            value: ether(1),
-            message: VaultMsg::Deposit {},
-        )
+#[test]
+fn tiny_amounts_and_zero_weight_bounds() {
+    let shares = allocate(amount: wei(2), weights: [0, 1, 0, 1])
+    assert!(shares == [0, 1, 0, 1])
+    assert!(shares[0] == 0)
+    assert!(shares[2] == 0)
+    assert!(shares[1] <= 2)
+    assert!(shares[3] <= 2)
+    assert!(shares[0] + shares[1] + shares[2] + shares[3] == 2)
+}
 
-    let payee = Address::new(0x1234)
-    let withdrawn: Wei = evm
+#[test]
+fn largest_remainder_prefers_larger_fraction() {
+    // Shares are 5/6, 10/6, and 15/6 wei. After flooring, two wei remain;
+    // the first and second recipients have the largest fractional remainders.
+    let shares = allocate(amount: wei(5), weights: [1, 2, 3, 0])
+    assert!(shares == [1, 2, 2, 0])
+    assert!(shares[0] + shares[1] + shares[2] + shares[3] == 5)
+}
+
+#[test]
+fn maximum_total_weight_boundary_preserves_small_remainder() {
+    // Exercise the inclusive weight cap and a near-limit product in the
+    // remainder calculation. The one leftover wei goes to recipient 1.
+    let shares = allocate(
+        amount: wei(999_999_999_999_999_999),
+        weights: [999_999_999_999_999_999, 1, 0, 0],
+    )
+    assert!(shares == [999_999_999_999_999_998, 1, 0, 0])
+    assert!(
+        shares[0] + shares[1] + shares[2] + shares[3] == 999_999_999_999_999_999,
+    )
+}
+
+#[test]
+fn zero_amount_returns_zero_for_valid_weights() {
+    let shares = allocate(amount: wei(0), weights: [1, 2, 3, 0])
+    assert!(shares == [0, 0, 0, 0])
+}
+
+#[test]
+fn tied_fractional_remainders_follow_order() {
+    // Amount 2 across three equal recipients: two remainder units are awarded
+    // to indices 0 and 1; index 2 receives zero. Reordering weights reorders ties.
+    let forward = allocate(amount: wei(2), weights: [1, 1, 1, 0])
+    let reverse = allocate(amount: wei(2), weights: [0, 1, 1, 1])
+    assert!(forward == [1, 1, 0, 0])
+    assert!(reverse == [0, 1, 1, 0])
+}
+
+#[test]
+fn large_amount_arithmetic_is_bounded() {
+    let shares = allocate(amount: ether(3), weights: [1, 2, 3, 4])
+    assert!(
+        shares
+            == [
+                300_000_000_000_000_000,
+                600_000_000_000_000_000,
+                900_000_000_000_000_000,
+                1_200_000_000_000_000_000,
+            ],
+    )
+    assert!(
+        shares[0] + shares[1] + shares[2] + shares[3] == ether(3).as_wei(),
+    )
+    assert!(shares[0] <= ether(3).as_wei())
+    assert!(shares[1] <= ether(3).as_wei())
+    assert!(shares[2] <= ether(3).as_wei())
+    assert!(shares[3] <= ether(3).as_wei())
+}
+
+#[test(should_revert)]
+fn all_zero_weights_revert() {
+    let _ = allocate(amount: wei(7), weights: [0, 0, 0, 0])
+}
+
+#[test(should_revert)]
+fn excessive_total_weight_reverts() {
+    let _ = allocate(
+        amount: wei(7),
+        weights: [1_000_000_000_000_000_000, 1, 0, 0],
+    )
+}
+
+#[test]
+fn contract_quote_matches_pure_allocator() uses (evm: mut Evm) {
+    let splitter = evm.create2<LastWeiSplitter>(value: Wei::zero(), args: (), salt: 0)
+    let quoted: [u256; 4] = evm
         .call(
-            addr: vault,
-            gas: 200000,
+            addr: splitter,
+            gas: 500_000,
             value: Wei::zero(),
-            message: VaultMsg::Withdraw { to: payee },
+            message: SplitterMsg::Quote { amount: ether(1), weights: [1, 2, 3, 4] },
         )
-    assert!(withdrawn == ether(1))
-    assert!(evm.balance(payee) == ether(1))
-    let balance: Wei = evm
-        .call(
-            addr: vault,
-            gas: 100000,
-            value: Wei::zero(),
-            message: VaultMsg::BalanceOf { owner: evm.address() },
-        )
-    assert!(balance == Wei::zero())
+    assert!(
+        quoted
+            == [
+                100_000_000_000_000_000,
+                200_000_000_000_000_000,
+                300_000_000_000_000_000,
+                400_000_000_000_000_000,
+            ],
+    )
 }

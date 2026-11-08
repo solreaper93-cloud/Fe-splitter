@@ -1,82 +1,74 @@
-// A time-locked vault: each account deposits ETH and can withdraw it once its
-// lock period has passed. Replace it with your own project.
+// Last Wei: deterministic proportional ETH allocation quotes for four recipients.
+// This contract computes integer wei payouts. It does not custody or transfer ETH.
 
-use std::evm::StorageMap
+use std::abi::sol
+use std::evm::Wei
 
-msg VaultMsg {
-    #[selector = sol("deposit()")]
-    Deposit -> Timestamp,
-    #[selector = sol("withdraw(address)")]
-    Withdraw { to: Address } -> Wei,
-    #[selector = sol("balanceOf(address)")]
-    BalanceOf { owner: Address } -> Wei,
-    #[selector = sol("unlockTime(address)")]
-    UnlockTime { owner: Address } -> Timestamp,
+const MAX_TOTAL_WEIGHT: u256 = 1_000_000_000_000_000_000
+
+msg SplitterMsg {
+    #[selector = sol("quote(uint256,uint256[4])")]
+    Quote { amount: Wei, weights: [u256; 4] } -> [u256; 4],
 }
 
-#[event]
-struct Deposited {
-    #[indexed]
-    owner: Address,
-    amount: Wei,
-    unlock_at: Timestamp,
+// Largest-remainder allocation. Floor each exact share, then distribute the
+// fewer-than-four leftover wei to the largest fractional remainders. Ties go
+// to the lower input index. Zero-weight recipients are never selected.
+fn allocate(amount: Wei, weights: [u256; 4]) -> [u256; 4] {
+    var total_weight: u256 = 0
+    for weight in weights {
+        assert!(weight <= MAX_TOTAL_WEIGHT, "Weight exceeds limit")
+        assert!(
+            total_weight <= MAX_TOTAL_WEIGHT - weight,
+            "Total weight exceeds limit",
+        )
+        total_weight += weight
+    }
+    assert!(total_weight > 0, "At least one weight is required")
+
+    let amount_wei = amount.as_wei()
+    let amount_mod_total = amount_wei % total_weight
+    var shares: [u256; 4] = [0; 4]
+    var remainders: [u256; 4] = [0; 4]
+    var assigned: [bool; 4] = [false; 4]
+    var allocated: u256 = 0
+
+    for (i, weight) in weights.enumerate() {
+        if weight > 0 {
+            let base = amount.mul_div(numerator: weight, denominator: total_weight).as_wei()
+            shares[i] = base
+            allocated += base
+            // (amount * weight) mod total == ((amount mod total) * weight) mod total.
+            // Both factors are at most MAX_TOTAL_WEIGHT, so this product fits u256.
+            remainders[i] = (amount_mod_total * weight) % total_weight
+        }
+    }
+
+    var remaining = amount_wei - allocated
+    while remaining > 0 {
+        var best_index: usize = 4
+        var best_remainder: u256 = 0
+        for (i, weight) in weights.enumerate() {
+            if weight > 0 && !assigned[i] {
+                if best_index == 4 || remainders[i] > best_remainder {
+                    best_index = i
+                    best_remainder = remainders[i]
+                }
+            }
+        }
+        assert!(best_index < 4, "No eligible recipient for remainder")
+        shares[best_index] += 1
+        assigned[best_index] = true
+        remaining -= 1
+    }
+
+    shares
 }
 
-#[event]
-struct Withdrawn {
-    #[indexed]
-    owner: Address,
-    to: Address,
-    amount: Wei,
-}
-
-pub contract Vault uses (ctx: Ctx, call: mut Call, log: mut Log) {
-    lock: Duration,
-    mut balances: StorageMap<Address, Wei>,
-    mut unlock_at: StorageMap<Address, Timestamp>,
-
-    init(lock_period: Duration) uses (mut lock) { lock = lock_period }
-
-    recv VaultMsg {
-        // Every deposit restarts the depositor's lock period.
-        #[payable]
-        Deposit -> Timestamp uses (ctx, lock, mut balances, mut unlock_at, mut log) {
-            let owner = ctx.caller()
-            let amount = ctx.value()
-            assert!(amount > Wei::zero(), "Nothing to deposit")
-
-            let unlock = ctx.timestamp() + lock
-            balances.set(key: owner, value: balances.get(key: owner) + amount)
-            unlock_at.set(key: owner, value: unlock)
-            log.emit(Deposited { owner, amount, unlock_at: unlock })
-            unlock
-        }
-
-        Withdraw { to } -> Wei uses (ctx, mut call, mut balances, unlock_at, mut log) {
-            let owner = ctx.caller()
-            let amount = balances.get(key: owner)
-            assert!(amount > Wei::zero(), "Nothing to withdraw")
-            assert!(
-                ctx.timestamp() >= unlock_at.get(key: owner),
-                "Still locked",
-            )
-
-            // Update the balance before sending, so a reentrant call finds nothing.
-            balances.set(key: owner, value: Wei::zero())
-            assert!(
-                call.send_value(addr: to, gas: 0, value: amount).success(),
-                "Transfer failed",
-            )
-            log.emit(Withdrawn { owner, to, amount })
-            amount
-        }
-
-        BalanceOf { owner } -> Wei uses (balances) {
-            balances.get(key: owner)
-        }
-
-        UnlockTime { owner } -> Timestamp uses (unlock_at) {
-            unlock_at.get(key: owner)
+pub contract LastWeiSplitter {
+    recv SplitterMsg {
+        Quote { amount, weights } -> [u256; 4] {
+            allocate(amount: amount, weights: weights)
         }
     }
 }

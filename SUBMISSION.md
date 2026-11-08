@@ -1,57 +1,30 @@
-# Project name
+# Last Wei submission reference
 
-<!-- Replace README.md with this file once you start your project, and fill in
-every section. The jury reads it first. -->
+**Pitch:** Last Wei computes a deterministic proportional split of an ETH amount across four recipients, assigning every wei without losing rounding dust.
 
-**Pitch:** One sentence that explains what your project does and why it matters.
+## Implementation
 
-## The problem
+A pure Fe allocator uses the largest-remainder method, with ties resolved by recipient input order. The quote contract calculates four wei outputs and does not hold or transfer ETH. The interface is fixed at four recipients.
 
-What problem does the project solve, and for whom?
+## Reproducible check
 
-## Approach
-
-How does the project solve it? What did you build during the contest?
-
-## Fe highlight
-
-One Fe-specific technical highlight, with a short code excerpt: a language
-feature, abstraction, or tool that made the difference.
-
-## Architecture
-
-How the code fits together: the main modules, contracts, or components, and
-how they interact.
-
-## Build and test
+Built and tested with Fe 26.5.0. From the project directory:
 
 ```sh
-fe --version   # The exact Fe version you used, e.g. fe 26.5.0
-fe test
+fe --version
+fe fmt --check
 fe build
+fe test
 ```
 
-List any other tools the project needs, and how to install them.
+Local verification on November 5, 2026: formatting check passed, build passed, and all 11 tests passed. The reproducible demo is the `contract_quote_matches_pure_allocator` test in `src/tests.fe`.
 
-## Demo
+## License and source
 
-A link to a video or screenshots, or a reproducible CLI example.
+Apache License 2.0, see `LICENSE`. The project retains the Fe Builders Challenge starter Git history and CI scaffold; the project implementation and tests are in `src/`.
 
-## Limitations
+## Repository
 
-What works, what is unfinished, and known issues or security assumptions.
+Target repository: https://github.com/solreaper93-cloud/Fe-splitter
 
-## Declaration
-
-- **Pre-existing work:** What existed before November 3, 2026, and what you
-  added or changed during the contest. Link the starting commit if there is one.
-- **Third-party code:** Code you reused, with its source and license.
-- **AI assistance:** How you used AI tools, if at all.
-
-## Team
-
-Who built the project.
-
-## License
-
-The OSI-approved license of the project.
+The repository contains the project source and preserves the Fe Builders Challenge starter history. No deployment or contest registration/submission is claimed here.
