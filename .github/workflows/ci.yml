@@ -18,7 +18,15 @@ jobs:
       - uses: actions/checkout@v5
       - name: Install Fe
         run: |
-          curl -fsSL https://raw.githubusercontent.com/argotorg/fe/master/feup/feup.sh | bash -s -- --version "$FE_VERSION" --no-modify-path
+          for attempt in 1 2 3; do
+            if curl --retry 3 --retry-all-errors --retry-delay 2 -fsSL https://raw.githubusercontent.com/argotorg/fe/master/feup/feup.sh | bash -s -- --version "$FE_VERSION" --no-modify-path; then
+              break
+            elif [ "$attempt" -eq 3 ]; then
+              exit 1
+            else
+              sleep $((attempt * 5))
+            fi
+          done
           echo "$HOME/.fe/bin" >> "$GITHUB_PATH"
       - run: fe --version
       - run: fe fmt --check
