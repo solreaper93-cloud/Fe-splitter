@@ -52,7 +52,7 @@ This is a deterministic quote calculator, not a production payment splitter. It 
 
 ## Declaration
 
-The repository preserves the Fe Builders Challenge starter's Git history and scaffold, including its layout, Apache-2.0 license, and CI setup. The official starter is https://github.com/fe-lang/builders-challenge-starter. The splitter logic, tests, and project README were written after the build window opened on November 3, 2026 (UTC); no external splitter implementation was copied. AI assistance was used to implement, document, and test this project. The project changes are committed locally on top of the starter history; they have not been pushed, published, registered, deployed, or submitted.
+The starter's scaffold, Apache-2.0 license, and CI setup are preserved. The official starter is https://github.com/fe-lang/builders-challenge-starter. The splitter logic, tests, and this README were written after the build window opened on November 3, 2026 (UTC); no external splitter implementation was copied. AI assistance was used to implement, document, and test this project. The project changes are committed on top of the starter history and published in the public repository at https://github.com/solreaper93-cloud/Fe-splitter. The project has not been registered, deployed, or submitted.
 
 ## Team
 
